@@ -48,12 +48,11 @@
 <div id="bloqueConectar">
     <input id="server" value="realtimeent.onrender.com">
     <button id="conectar">Conectar</button>
-    <button id="desconectar">Desconectar</button>
     <span id="estado"></span>
 </div>
 
 <script>
-/* Nombres como en tu código original */
+/* === VARIABLES === */
 var jugadorBluePrint = document.getElementById("plantilla");
 jugadorBluePrint.remove();
 
@@ -61,33 +60,34 @@ var miConexion = null;
 var miID = -1;
 var fruta = null;
 
-// limpiar prefijos y elegir ws/wss automáticamente
+/* === FUNCIÓN CREAR WEBSOCKET SEGURO === */
 function crearWebSocketDesdeDireccion(direccionInput) {
     direccionInput = direccionInput.trim();
     if (!direccionInput) throw new Error("Dirección vacía");
-    // si el usuario puso http(s):// eliminarlo
+
+    // Limpia prefijos http:// o https://
     direccionInput = direccionInput.replace(/^https?:\/\//, "");
-    // si usuario puso ws:// o wss://, usar tal cual
+
     if (direccionInput.startsWith("ws://") || direccionInput.startsWith("wss://")) {
         return new WebSocket(direccionInput);
     }
-    // si es onrender/servicio similar -> wss
+
     if (direccionInput.includes("render") || direccionInput.includes("onrender.com") || direccionInput.includes("herokuapp.com")) {
         return new WebSocket("wss://" + direccionInput);
     }
-    // si incluye puerto: host:port
+
     if (direccionInput.includes(":")) {
         return new WebSocket("ws://" + direccionInput);
     }
-    // por defecto ws://host:8080
+
     return new WebSocket("ws://" + direccionInput + ":8080");
 }
 
-/* --- Conectar / Desconectar --- */
+/* === CONECTAR === */
 document.getElementById("conectar").addEventListener("click", () => {
     const estadoEl = document.getElementById("estado");
 
-    // si ya hay conexión en curso u abierta, no crear otra
+    // Evita conectar varias veces
     if (miConexion && (miConexion.readyState === WebSocket.OPEN || miConexion.readyState === WebSocket.CONNECTING)) {
         estadoEl.innerText = "ya conectado";
         return;
@@ -120,7 +120,7 @@ document.getElementById("conectar").addEventListener("click", () => {
     miConexion.addEventListener("close", () => {
         console.log("WS cerrado");
         estadoEl.innerText = "desconectado";
-        // limpieza completa al cerrar para permitir reconectar limpísimo
+        // Limpieza completa al cerrar
         miConexion = null;
         miID = -1;
     });
@@ -130,12 +130,8 @@ document.getElementById("conectar").addEventListener("click", () => {
         try { mensaje = JSON.parse(m.data.toString()); }
         catch (e) { console.warn("Mensaje no JSON:", m.data); return; }
 
-        // ---- manejar tipos ----
         if (mensaje.tipo === "new") {
-            // tu comportamiento original: el primer "new" que reciba un cliente es su propio jugador
             if (miID === -1) miID = mensaje.datos.id;
-
-            // evitar duplicados
             if (document.getElementById(mensaje.datos.id)) return;
 
             const nuevoJugador = jugadorBluePrint.cloneNode();
@@ -190,21 +186,10 @@ document.getElementById("conectar").addEventListener("click", () => {
             if (el) el.remove();
             return;
         }
-
-        console.log("Mensaje no manejado:", mensaje);
     });
 });
 
-// botón desconectar (opcional)
-document.getElementById("desconectar").addEventListener("click", () => {
-    if (miConexion) {
-        miConexion.close();
-        miConexion = null;
-    }
-    miID = -1;
-});
-
-/* --- Eventos de teclado (solo envían si la conexión es tuya y abierta) --- */
+/* === TECLADO === */
 document.addEventListener("keydown", (ev) => {
     if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
     if (miID === -1) return;
@@ -231,7 +216,7 @@ document.addEventListener("keyup", (ev) => {
     try { miConexion.send(JSON.stringify(msg)); } catch (e) { console.error("Send stop error:", e); }
 });
 
-/* --- Animación local (mueve los DIVs según dataset.dir) --- */
+/* === ANIMACIÓN LOCAL === */
 setInterval(() => {
     const lista = document.getElementsByClassName("jugador");
     if (lista.length < 1) return;
@@ -255,7 +240,7 @@ setInterval(() => {
         j.style.left = px + "px";
         j.style.top = py + "px";
 
-        // detectar si toca la fruta
+        // Comer fruta
         if (fruta) {
             const fx = parseInt(fruta.style.left);
             const fy = parseInt(fruta.style.top);
