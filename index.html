@@ -2,39 +2,32 @@
 <html lang="es">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Snake Online</title>
 <style>
-    #juego {
-        border:2px solid black;
-        width:500px;
-        height:500px;
-        position:relative;
-        background-color:#f9f9f9;
-        border-radius:7px;
-    }
-    .jugador{
-        width:20px;
-        height:20px;
-        position:absolute;
-        left:0px;
-        top:0px;
-        border-radius:3px;
-        color:white;
-        font-size:10px;
-        text-align:center;
-        line-height:20px;
-        font-weight:bold;
-        text-shadow:0 0 2px black;
-    }
-    .fruta {
-        width:20px;
-        height:20px;
-        position:absolute;
-        border-radius:50%;
-        background:orange;
-    }
-    #bloqueConectar { margin-top:8px; }
+#juego {
+  width:500px; height:500px;
+  border:2px solid black;
+  position:relative;
+  background:#fafafa;
+}
+.jugador {
+  width:20px; height:20px;
+  position:absolute;
+  background:red;
+  border-radius:3px;
+  color:white;
+  text-align:center;
+  font-size:10px;
+  line-height:20px;
+  font-weight:bold;
+  text-shadow:0 0 2px black;
+}
+.fruta {
+  width:20px; height:20px;
+  position:absolute;
+  background:orange;
+  border-radius:50%;
+}
 </style>
 </head>
 <body>
@@ -42,218 +35,117 @@
 <h1>Snake Online</h1>
 
 <div id="juego">
-    <div class="jugador" id="plantilla"></div>
+  <div class="jugador" id="plantilla"></div>
 </div>
 
-<div id="bloqueConectar">
-    <input id="server" value="realtimeent.onrender.com">
-    <button id="conectar">Conectar</button>
-    <span id="estado"></span>
+<div>
+  <input id="server" value="realtimeent.onrender.com">
+  <button id="conectar">Conectar</button>
 </div>
 
 <script>
-/* === VARIABLES === */
 var jugadorBluePrint = document.getElementById("plantilla");
 jugadorBluePrint.remove();
 
-var miConexion = null;
+var miConexion;
 var miID = -1;
-var fruta = null;
+var fruta;
 
-/* === FUNCIÓN CREAR WEBSOCKET SEGURO === */
-function crearWebSocketDesdeDireccion(direccionInput) {
-    direccionInput = direccionInput.trim();
-    if (!direccionInput) throw new Error("Dirección vacía");
+document.getElementById("conectar").addEventListener("click", ()=>{
+  if (miConexion && miConexion.readyState === WebSocket.OPEN) return;
 
-    // Limpia prefijos http:// o https://
-    direccionInput = direccionInput.replace(/^https?:\/\//, "");
+  let host = document.getElementById("server").value.trim().replace(/^https?:\/\//, "");
+  miConexion = new WebSocket("wss://" + host);
 
-    if (direccionInput.startsWith("ws://") || direccionInput.startsWith("wss://")) {
-        return new WebSocket(direccionInput);
+  miConexion.addEventListener("message", (m)=>{
+    const msg = JSON.parse(m.data.toString());
+
+    if (msg.tipo === "new") {
+      if (miID === -1) miID = msg.datos.id;
+      if (document.getElementById(msg.datos.id)) return;
+      const j = jugadorBluePrint.cloneNode();
+      j.id = msg.datos.id;
+      j.dataset.posx = msg.datos.posx;
+      j.dataset.posy = msg.datos.posy;
+      j.dataset.dir = msg.datos.dir;
+      j.dataset.puntos = msg.datos.puntos;
+      j.style.left = msg.datos.posx + "px";
+      j.style.top = msg.datos.posy + "px";
+      j.style.backgroundColor = msg.datos.color;
+      j.innerHTML = msg.datos.puntos;
+      document.getElementById("juego").appendChild(j);
     }
 
-    if (direccionInput.includes("render") || direccionInput.includes("onrender.com") || direccionInput.includes("herokuapp.com")) {
-        return new WebSocket("wss://" + direccionInput);
+    if (msg.tipo === "delete") document.getElementById(msg.datos)?.remove();
+
+    if (msg.tipo === "mover") {
+      const j = document.getElementById(msg.datos.id);
+      if (j) {
+        j.dataset.posx = msg.datos.posx;
+        j.dataset.posy = msg.datos.posy;
+        j.style.left = msg.datos.posx + "px";
+        j.style.top = msg.datos.posy + "px";
+      }
     }
 
-    if (direccionInput.includes(":")) {
-        return new WebSocket("ws://" + direccionInput);
+    if (msg.tipo === "estadoFruta") {
+      if (!fruta) {
+        fruta = document.createElement("div");
+        fruta.className = "fruta";
+        document.getElementById("juego").appendChild(fruta);
+      }
+      fruta.style.left = msg.datos.posx + "px";
+      fruta.style.top = msg.datos.posy + "px";
     }
 
-    return new WebSocket("ws://" + direccionInput + ":8080");
-}
-
-/* === CONECTAR === */
-document.getElementById("conectar").addEventListener("click", () => {
-    const estadoEl = document.getElementById("estado");
-
-    // Evita conectar varias veces
-    if (miConexion && (miConexion.readyState === WebSocket.OPEN || miConexion.readyState === WebSocket.CONNECTING)) {
-        estadoEl.innerText = "ya conectado";
-        return;
+    if (msg.tipo === "puntuacion") {
+      const j = document.getElementById(msg.datos.id);
+      if (j) j.innerHTML = msg.datos.puntos;
     }
-
-    const direccionInput = document.getElementById("server").value.trim();
-    if (!direccionInput) { alert("Introduce la dirección del servidor"); return; }
-
-    try {
-        miConexion = crearWebSocketDesdeDireccion(direccionInput);
-    } catch (e) {
-        console.error("No se pudo crear WebSocket:", e);
-        estadoEl.innerText = "error crear ws";
-        miConexion = null;
-        return;
-    }
-
-    estadoEl.innerText = "conectando...";
-
-    miConexion.addEventListener("open", () => {
-        console.log("WS abierto");
-        estadoEl.innerText = "conectado";
-    });
-
-    miConexion.addEventListener("error", (ev) => {
-        console.error("WS error:", ev);
-        estadoEl.innerText = "error conexión";
-    });
-
-    miConexion.addEventListener("close", () => {
-        console.log("WS cerrado");
-        estadoEl.innerText = "desconectado";
-        // Limpieza completa al cerrar
-        miConexion = null;
-        miID = -1;
-    });
-
-    miConexion.addEventListener("message", (m) => {
-        let mensaje;
-        try { mensaje = JSON.parse(m.data.toString()); }
-        catch (e) { console.warn("Mensaje no JSON:", m.data); return; }
-
-        if (mensaje.tipo === "new") {
-            if (miID === -1) miID = mensaje.datos.id;
-            if (document.getElementById(mensaje.datos.id)) return;
-
-            const nuevoJugador = jugadorBluePrint.cloneNode();
-            nuevoJugador.id = mensaje.datos.id;
-            nuevoJugador.dataset.dir = mensaje.datos.dir ?? "0";
-            nuevoJugador.dataset.posx = mensaje.datos.posx ?? 0;
-            nuevoJugador.dataset.posy = mensaje.datos.posy ?? 0;
-            nuevoJugador.dataset.puntos = mensaje.datos.puntos ?? 0;
-            nuevoJugador.style.left = nuevoJugador.dataset.posx + "px";
-            nuevoJugador.style.top = nuevoJugador.dataset.posy + "px";
-            nuevoJugador.style.backgroundColor = mensaje.datos.color || "#c00";
-            nuevoJugador.innerHTML = nuevoJugador.dataset.puntos;
-            document.getElementById("juego").appendChild(nuevoJugador);
-            return;
-        }
-
-        if (mensaje.tipo === "mover") {
-            const d = mensaje.datos;
-            const el = document.getElementById(d.id);
-            if (!el) return;
-            el.dataset.dir = d.dir ?? "0";
-            el.dataset.posx = d.posx ?? el.dataset.posx;
-            el.dataset.posy = d.posy ?? el.dataset.posy;
-            el.style.left = el.dataset.posx + "px";
-            el.style.top = el.dataset.posy + "px";
-            return;
-        }
-
-        if (mensaje.tipo === "estadoFruta") {
-            const posx = mensaje.datos.posx;
-            const posy = mensaje.datos.posy;
-            if (!fruta) {
-                fruta = document.createElement("div");
-                fruta.className = "fruta";
-                document.getElementById("juego").appendChild(fruta);
-            }
-            fruta.style.left = posx + "px";
-            fruta.style.top = posy + "px";
-            return;
-        }
-
-        if (mensaje.tipo === "puntuacion") {
-            const id = mensaje.datos.id;
-            const puntos = mensaje.datos.puntos;
-            const el = document.getElementById(id);
-            if (el) { el.dataset.puntos = puntos; el.innerHTML = puntos; }
-            return;
-        }
-
-        if (mensaje.tipo === "delete") {
-            const el = document.getElementById(mensaje.datos);
-            if (el) el.remove();
-            return;
-        }
-    });
+  });
 });
 
-/* === TECLADO === */
-document.addEventListener("keydown", (ev) => {
-    if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
-    if (miID === -1) return;
-    const key = ev.key.toLowerCase();
-    if (!["a","s","d","w"].includes(key)) return;
-
-    const yo = document.getElementById(miID);
-    if (!yo) return;
-
-    const msg = { tipo: "mover", datos: { id: miID, posx: yo.dataset.posx, posy: yo.dataset.posy, dir: key } };
-    try { miConexion.send(JSON.stringify(msg)); } catch (e) { console.error("Send mover error:", e); }
+document.addEventListener("keydown", (e)=>{
+  if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
+  const dir = e.key.toLowerCase();
+  if (!["w","a","s","d"].includes(dir)) return;
+  const j = document.getElementById(miID);
+  if (!j) return;
+  miConexion.send(JSON.stringify({ tipo:"mover", datos:{
+    id: miID, posx: j.dataset.posx, posy: j.dataset.posy, dir
+  }}));
 });
 
-document.addEventListener("keyup", (ev) => {
-    if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
-    if (miID === -1) return;
-    const key = ev.key.toLowerCase();
-    if (!["a","s","d","w"].includes(key)) return;
-
-    const yo = document.getElementById(miID);
-    if (!yo) return;
-
-    const msg = { tipo: "mover", datos: { id: miID, posx: yo.dataset.posx, posy: yo.dataset.posy, dir: "0" } };
-    try { miConexion.send(JSON.stringify(msg)); } catch (e) { console.error("Send stop error:", e); }
+document.addEventListener("keyup", (e)=>{
+  if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
+  if (!["w","a","s","d"].includes(e.key.toLowerCase())) return;
+  const j = document.getElementById(miID);
+  if (!j) return;
+  miConexion.send(JSON.stringify({ tipo:"mover", datos:{
+    id: miID, posx: j.dataset.posx, posy: j.dataset.posy, dir:"0"
+  }}));
 });
 
-/* === ANIMACIÓN LOCAL === */
-setInterval(() => {
-    const lista = document.getElementsByClassName("jugador");
-    if (lista.length < 1) return;
-    for (let i = 0; i < lista.length; i++) {
-        const j = lista[i];
-        const dir = j.dataset.dir || "0";
-        let px = Number(j.dataset.posx) || 0;
-        let py = Number(j.dataset.posy) || 0;
-        if (dir === "a") px -= 20;
-        else if (dir === "d") px += 20;
-        else if (dir === "w") py -= 20;
-        else if (dir === "s") py += 20;
-
-        if (px < 0) px = 0;
-        if (px > 480) px = 480;
-        if (py < 0) py = 0;
-        if (py > 480) py = 480;
-
-        j.dataset.posx = px;
-        j.dataset.posy = py;
-        j.style.left = px + "px";
-        j.style.top = py + "px";
-
-        // Comer fruta
-        if (fruta) {
-            const fx = parseInt(fruta.style.left);
-            const fy = parseInt(fruta.style.top);
-            if (px === fx && py === fy) {
-                if (miConexion && miConexion.readyState === WebSocket.OPEN) {
-                    try {
-                        miConexion.send(JSON.stringify({ tipo: "comer", datos: { id: j.id } }));
-                    } catch (e) { console.error("Send comer error:", e); }
-                }
-            }
-        }
+setInterval(()=>{
+  const js = document.getElementsByClassName("jugador");
+  for (let j of js) {
+    let px = +j.dataset.posx;
+    let py = +j.dataset.posy;
+    if (j.dataset.dir==="w") py-=20;
+    if (j.dataset.dir==="s") py+=20;
+    if (j.dataset.dir==="a") px-=20;
+    if (j.dataset.dir==="d") px+=20;
+    px = Math.max(0, Math.min(480, px));
+    py = Math.max(0, Math.min(480, py));
+    j.dataset.posx = px;
+    j.dataset.posy = py;
+    j.style.left = px + "px";
+    j.style.top = py + "px";
+    if (fruta && px==parseInt(fruta.style.left) && py==parseInt(fruta.style.top)) {
+      miConexion.send(JSON.stringify({ tipo:"comer", datos:{ id:j.id }}));
     }
-}, 200);
+  }
+},200);
 </script>
 </body>
 </html>
