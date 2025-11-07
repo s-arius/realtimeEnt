@@ -58,7 +58,10 @@ var miID = -1;
 var fruta;
 
 document.getElementById("conectar").addEventListener("click", ()=>{
+    var direccion = document.getElementById("server").value.trim();
     miConexion = new WebSocket("wss://" + direccion);
+});
+
 
 
     miConexion.addEventListener("message", (m)=>{
