@@ -1,44 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Snake Online</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>snake Online</title>
 <style>
-#juego {
-    border:2px solid black;
-    width:500px;
-    height:500px;
-    position:relative;
-    background-color:#f9f9f9;
-}
-.jugador{
-    width:20px;
-    height:20px;
-    background-color:red;
-    position:absolute;
-    left:0px;
-    top:0px;
-    border-radius:3px;
-    color:white;
-    font-size:10px;
-    text-align:center;
-    line-height:20px;
-    font-weight:bold;
-    text-shadow:0 0 2px black;
-}
-.fruta {
-    width:20px;
-    height:20px;
-    background-color:orange;
-    position:absolute;
-    border-radius:50%;
-}
+    #juego {
+        border:2px solid black;
+        width:500px;
+        height:500px;
+        position:relative;
+        background-color:#f9f9f9;
+        border-radius:7px;
+    }
+    .jugador{
+        width:20px;
+        height:20px;
+        background-color:red;
+        position:absolute;
+        left:0px;
+        top:0px;
+        border-radius:3px;
+        color:white;
+        font-size:10px;
+        text-align:center;
+        line-height:20px;
+        font-weight:bold;
+        text-shadow:0 0 2px black;
+    }
+    .fruta {
+        width:20px;
+        height:20px;
+        background-color:orange;
+        position:absolute;
+        border-radius:50%;
+    }
+    #bloqueConectar { margin-top:8px; }
 </style>
 </head>
 <body>
 
-<h1>Snake Online</h1>
+<h1>snake Online</h1>
 
 <div id="juego">
     <div class="jugador" id="plantilla"></div>
@@ -47,6 +49,7 @@
 <div id="bloqueConectar">
     <input id="server" value="https://realtimeent.onrender.com">
     <button id="conectar">Conectar</button>
+    <span id="estado"></span>
 </div>
 
 <script>
@@ -57,105 +60,207 @@ var miConexion;
 var miID = -1;
 var fruta;
 
+/* función util: crea conexión websocket de forma segura (ws/wss) */
+function crearWebSocketDesdeDireccion(direccionInput) {
+    // direccionInput puede ser:
+    // - solo host (ej: 127.0.0.1) -> intentamos ws://host:8080
+    // - host:port (ej: ejemplo.com:8080)
+    // - ya una URL con protocolo (ws://...) o (wss://...)
+    direccionInput = direccionInput.trim();
+    if (!direccionInput) throw new Error("Dirección vacía");
+
+    // si ya contiene protocolo ws/wss lo usamos directamente
+    if (direccionInput.startsWith("ws://") || direccionInput.startsWith("wss://")) {
+        return new WebSocket(direccionInput);
+    }
+
+    // si parece nombre DNS sin puerto -> intento wss si probable (user can change)
+    // Default: intentar ws://host:8080
+    // (si quieres wss por defecto, cambia aquí)
+    // Hecho: si host contiene "onrender.com" o "render" intento wss
+    if (direccionInput.includes("render") || direccionInput.includes("onrender.com") || direccionInput.includes("herokuapp.com")) {
+        return new WebSocket("wss://" + direccionInput);
+    }
+
+    // si contiene dos puntos (host:port) no añadimos :8080
+    if (direccionInput.includes(":")) {
+        return new WebSocket("ws://" + direccionInput);
+    }
+
+    // por defecto ws://host:8080
+    return new WebSocket("ws://" + direccionInput + ":8080");
+}
+
+/* Evento conectar */
 document.getElementById("conectar").addEventListener("click", ()=>{
-    var direccion = document.getElementById("server").value.trim();
-    miConexion = new WebSocket("wss://" + direccion);
-});
+    const estadoEl = document.getElementById("estado");
+    estadoEl.innerText = "intentando conectar...";
 
+    let direccion;
+    try {
+        direccion = document.getElementById("server").value.trim();
+        if (!direccion) { alert("Introduce la dirección del servidor"); estadoEl.innerText = "dirección vacía"; return; }
+    } catch (e) {
+        console.error("Fallo obteniendo direccion:", e);
+        estadoEl.innerText = "error dirección";
+        return;
+    }
 
+    try {
+        miConexion = crearWebSocketDesdeDireccion(direccion);
+    } catch (e) {
+        console.error("No se pudo crear WebSocket:", e);
+        estadoEl.innerText = "error crear ws";
+        return;
+    }
 
-    miConexion.addEventListener("message", (m)=>{
-        mensaje = JSON.parse(m.data.toString());
+    miConexion.addEventListener("open", ()=> {
+        console.log("WS abierto");
+        estadoEl.innerText = "conectado";
+    });
+
+    miConexion.addEventListener("error", (err)=> {
+        console.error("WS error:", err);
+        estadoEl.innerText = "error conexión";
+    });
+
+    miConexion.addEventListener("close", ()=> {
+        console.log("WS cerrado");
+        estadoEl.innerText = "desconectado";
+    });
+
+    miConexion.addEventListener("message", (m)=> {
+        try {
+            mensaje = JSON.parse(m.data.toString());
+        } catch (e) {
+            console.warn("Mensaje no JSON:", m.data);
+            return;
+        }
+        console.log("Mensaje recibido:", mensaje);
 
         if (mensaje.tipo == "new") {
-            // si todavía no tengo mi ID, este primer jugador soy yo
+            // igual que tu versión original: el primer "new" que recibe un cliente es su propio jugador
             if (miID == -1) miID = mensaje.datos.id;
 
-            // evitar duplicados
+            // evitar crear duplicados
             if (document.getElementById(mensaje.datos.id)) return;
 
-            nuevoJugador = jugadorBluePrint.cloneNode();
+            const nuevoJugador = jugadorBluePrint.cloneNode();
             nuevoJugador.id = mensaje.datos.id;
-            nuevoJugador.dataset.dir = mensaje.datos.dir;
-            nuevoJugador.dataset.posy = mensaje.datos.posy;
-            nuevoJugador.dataset.posx = mensaje.datos.posx;
-            nuevoJugador.dataset.puntos = mensaje.datos.puntos;
-            nuevoJugador.style.top = mensaje.datos.posy+"px";
-            nuevoJugador.style.left = mensaje.datos.posx+"px";
-            nuevoJugador.style.backgroundColor = mensaje.datos.color;
-            nuevoJugador.innerHTML = mensaje.datos.puntos;
+            nuevoJugador.dataset.dir = mensaje.datos.dir ?? "0";
+            // aseguro que posx/posy no sean undefined
+            nuevoJugador.dataset.posy = mensaje.datos.posy != undefined ? mensaje.datos.posy : 0;
+            nuevoJugador.dataset.posx = mensaje.datos.posx != undefined ? mensaje.datos.posx : 0;
+            nuevoJugador.dataset.puntos = mensaje.datos.puntos != undefined ? mensaje.datos.puntos : 0;
+            nuevoJugador.style.top = nuevoJugador.dataset.posy + "px";
+            nuevoJugador.style.left = nuevoJugador.dataset.posx + "px";
+            nuevoJugador.style.backgroundColor = mensaje.datos.color || "#c00";
+            nuevoJugador.innerHTML = nuevoJugador.dataset.puntos;
             document.getElementById("juego").appendChild(nuevoJugador);
 
-        } else if (mensaje.tipo == "delete") {
-            document.getElementById(mensaje.datos)?.remove();
+            return;
+        }
 
-        } else if (mensaje.tipo == "mover") {
-            var j = document.getElementById(mensaje.datos.id);
+        if (mensaje.tipo == "delete") {
+            const el = document.getElementById(mensaje.datos);
+            if (el) el.remove();
+            return;
+        }
+
+        if (mensaje.tipo == "mover") {
+            const j = document.getElementById(mensaje.datos.id);
             if (j) {
-                j.dataset.dir = mensaje.datos.dir;
-                j.dataset.posy = mensaje.datos.posy;
-                j.dataset.posx = mensaje.datos.posx;
-                j.style.left = mensaje.datos.posx + "px";
-                j.style.top = mensaje.datos.posy + "px";
+                // servidor es autoridad: actualizamos dataset y posición directamente
+                j.dataset.dir = mensaje.datos.dir ?? "0";
+                j.dataset.posy = mensaje.datos.posy != undefined ? mensaje.datos.posy : j.dataset.posy;
+                j.dataset.posx = mensaje.datos.posx != undefined ? mensaje.datos.posx : j.dataset.posx;
+                j.style.left = j.dataset.posx + "px";
+                j.style.top = j.dataset.posy + "px";
             }
+            return;
+        }
 
-        } else if (mensaje.tipo == "estadoFruta") {
+        if (mensaje.tipo == "estadoFruta") {
+            const posx = mensaje.datos.posx;
+            const posy = mensaje.datos.posy;
             if (!fruta) {
                 fruta = document.createElement("div");
                 fruta.className = "fruta";
                 document.getElementById("juego").appendChild(fruta);
             }
-            fruta.style.left = mensaje.datos.posx + "px";
-            fruta.style.top = mensaje.datos.posy + "px";
-
-        } else if (mensaje.tipo == "puntuacion") {
-            var j = document.getElementById(mensaje.datos.id);
-            if (j) {
-                j.dataset.puntos = mensaje.datos.puntos;
-                j.innerHTML = mensaje.datos.puntos;
-            }
+            fruta.style.left = posx + "px";
+            fruta.style.top = posy + "px";
+            return;
         }
-    });
-//});
 
+        if (mensaje.tipo == "puntuacion") {
+            const id = mensaje.datos.id;
+            const puntos = mensaje.datos.puntos;
+            const jugador = document.getElementById(id);
+            if (jugador) {
+                jugador.dataset.puntos = puntos;
+                jugador.innerHTML = puntos;
+            }
+            return;
+        }
+
+        // si llegan otros tipos, los mostramos
+        console.log("Tipo de mensaje no manejado:", mensaje.tipo);
+    });
+});
+
+/* Eventos de teclado: antes de enviar comprobamos que hay conexión abierta y miID válido */
 document.addEventListener("keydown", (ev)=>{
-    var yo=document.getElementById(miID);
+    if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
+    if (miID === -1) return;
+    const key = ev.key.toLowerCase();
+    if (!["a","s","d","w"].includes(key)) return;
+
+    const yo = document.getElementById(miID);
     if (!yo) return;
-    mensaje={
-        tipo:"mover",
-        datos:{
-            id:miID,
+
+    const msg = {
+        tipo: "mover",
+        datos: {
+            id: miID,
             posx: yo.dataset.posx,
             posy: yo.dataset.posy,
-            dir:ev.key
+            dir: key
         }
     };
-    miConexion.send(JSON.stringify(mensaje));
+    try { miConexion.send(JSON.stringify(msg)); } catch(e) { console.error("Error al enviar mover:", e); }
 });
 
 document.addEventListener("keyup", (ev)=>{
-    var yo=document.getElementById(miID);
+    if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
+    if (miID === -1) return;
+    const key = ev.key.toLowerCase();
+    if (!["a","s","d","w"].includes(key)) return;
+
+    const yo = document.getElementById(miID);
     if (!yo) return;
-    mensaje={
-        tipo:"mover",
-        datos:{
-            id:miID,
+
+    const msg = {
+        tipo: "mover",
+        datos: {
+            id: miID,
             posx: yo.dataset.posx,
             posy: yo.dataset.posy,
-            dir:"0"
+            dir: "0"
         }
     };
-    miConexion.send(JSON.stringify(mensaje));
+    try { miConexion.send(JSON.stringify(msg)); } catch(e) { console.error("Error al enviar stop:", e); }
 });
 
+/* Intervalo de animación local (igual que antes) */
 setInterval(()=>{
     var listaJugadores=document.getElementsByClassName("jugador");
     if (listaJugadores.length<1) return;
     for (var i=0;i<listaJugadores.length;i++){
-        j=listaJugadores[i];
-        var dir=j.dataset.dir;
-        var px=Number(j.dataset.posx);
-        var py=Number(j.dataset.posy);
+        var j = listaJugadores[i];
+        var dir = j.dataset.dir || "0";
+        var px = Number(j.dataset.posx) || 0;
+        var py = Number(j.dataset.posy) || 0;
 
         if(dir=="a") px-=20;
         else if(dir=="d") px+=20;
@@ -172,15 +277,18 @@ setInterval(()=>{
         j.style.left=px+"px";
         j.style.top=py+"px";
 
-        // comprobar colisión con fruta
         if (fruta) {
             var fx = parseInt(fruta.style.left);
             var fy = parseInt(fruta.style.top);
             if (px == fx && py == fy) {
-                miConexion.send(JSON.stringify({
-                    tipo:"comer",
-                    datos:{ id:j.id }
-                }));
+                // solo enviamos si conexión abierta
+                if (miConexion && miConexion.readyState === WebSocket.OPEN) {
+                    try {
+                        miConexion.send(JSON.stringify({ tipo:"comer", datos:{ id:j.id } }));
+                    } catch(e){
+                        console.error("Error al enviar comer:", e);
+                    }
+                }
             }
         }
     }
