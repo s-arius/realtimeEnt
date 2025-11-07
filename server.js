@@ -1,90 +1,143 @@
+// server.js
+// Servidor WebSocket para Snake Online
+// Mantiene nombres sencillos y valida que cada socket controle solo su jugador.
+
+const WebSocket = require("ws");
+
 const PORT = process.env.PORT || 8080;
-const servidor = new WebSocket.Server({ port: PORT });
-console.log("Servidor Snake Online en puerto:", PORT);
+const servidor = new WebSocket.Server({ port: PORT }, () => {
+  console.log("Servidor WebSocket escuchando en puerto", PORT);
+});
 
-
-console.log("Servidor Snake Online iniciado en el puerto 8080");
-
-let conexiones = [];
-let jugadores = {};
 let siguienteID = 0;
+// jugadores: id -> { id, posx, posy, dir, puntos, color }
+const jugadores = new Map();
+// socketToId: ws -> id
+const socketToId = new Map();
+
 let fruta = generarFruta();
 
 function generarFruta() {
-    const posx = Math.floor(Math.random() * 25) * 20;
-    const posy = Math.floor(Math.random() * 25) * 20;
-    return { posx, posy };
+  return {
+    posx: Math.floor(Math.random() * 25) * 20,
+    posy: Math.floor(Math.random() * 25) * 20
+  };
 }
 
-function broadcast(mensaje) {
-    const txt = JSON.stringify(mensaje);
-    conexiones.forEach(c => {
-        if (c.readyState === WebSocket.OPEN) c.send(txt);
-    });
+function safeSend(ws, obj) {
+  try {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  } catch (e) { /* ignore */ }
+}
+
+function broadcast(obj) {
+  const txt = JSON.stringify(obj);
+  servidor.clients.forEach(c => {
+    if (c.readyState === WebSocket.OPEN) c.send(txt);
+  });
+}
+
+function broadcastExcept(exceptWs, obj) {
+  const txt = JSON.stringify(obj);
+  servidor.clients.forEach(c => {
+    if (c !== exceptWs && c.readyState === WebSocket.OPEN) c.send(txt);
+  });
 }
 
 servidor.on("connection", (ws) => {
-    const id = siguienteID++;
-    conexiones.push(ws);
+  const id = siguienteID++;
+  // crea jugador con propiedades iniciales (múltiplos de 20)
+  const jugador = {
+    id: id.toString(),
+    posx: Math.floor(Math.random() * 25) * 20,
+    posy: Math.floor(Math.random() * 25) * 20,
+    dir: "0",
+    puntos: 0,
+    color: `hsl(${Math.floor(Math.random()*360)}, 65%, 50%)`
+  };
 
-    const nuevoJugador = {
-        id: id,
-        posx: Math.floor(Math.random() * 25) * 20,
-        posy: Math.floor(Math.random() * 25) * 20,
-        dir: "0",
-        puntos: 0,
-        color: "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')
-    };
-    jugadores[id] = nuevoJugador;
+  jugadores.set(jugador.id, jugador);
+  socketToId.set(ws, jugador.id);
 
-    console.log("Jugador conectado:", id);
+  console.log("Jugador conectado:", jugador.id);
 
-    // 🔹 Enviar primero al jugador recién conectado su propio "new"
-    ws.send(JSON.stringify({ tipo: "new", datos: nuevoJugador }));
+  // 1) enviar al socket nuevo su propio "new" (así el cliente sabrá que el primer "new" es suyo)
+  safeSend(ws, { tipo: "new", datos: jugador });
 
-    // 🔹 Enviar el estado de la fruta
-    ws.send(JSON.stringify({ tipo: "estadoFruta", datos: fruta }));
+  // 2) enviar al nuevo socket el resto de jugadores existentes (excluyendo él)
+  for (const [otherId, otherPlayer] of jugadores.entries()) {
+    if (otherId === jugador.id) continue;
+    safeSend(ws, { tipo: "new", datos: otherPlayer });
+  }
 
-    // 🔹 Enviar al nuevo jugador la lista de los demás jugadores existentes
-    for (const otroID in jugadores) {
-        if (parseInt(otroID) !== id) {
-            ws.send(JSON.stringify({ tipo: "new", datos: jugadores[otroID] }));
-        }
+  // 3) enviar al nuevo socket la fruta actual
+  safeSend(ws, { tipo: "estadoFruta", datos: fruta });
+
+  // 4) notificar a los demás que hay un nuevo jugador (excluyendo al nuevo socket)
+  broadcastExcept(ws, { tipo: "new", datos: jugador });
+
+  // manejar mensajes desde el cliente
+  ws.on("message", (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw.toString()); }
+    catch (e) { return; }
+
+    // seguridad: id del socket que envía
+    const remitenteId = socketToId.get(ws);
+
+    if (msg.tipo === "mover") {
+      // validar que quien pide mover es el dueño del id
+      if (!msg.datos || msg.datos.id === undefined) return;
+      const idMsg = String(msg.datos.id);
+      if (idMsg !== remitenteId) return; // ignorar intentos de mover a otro jugador
+
+      const p = jugadores.get(idMsg);
+      if (!p) return;
+      // actualizar servidor como fuente de verdad
+      p.dir = msg.datos.dir ?? p.dir;
+      p.posx = (msg.datos.posx !== undefined) ? Number(msg.datos.posx) : p.posx;
+      p.posy = (msg.datos.posy !== undefined) ? Number(msg.datos.posy) : p.posy;
+
+      // asegurar límites
+      if (p.posx < 0) p.posx = 0;
+      if (p.posx > 480) p.posx = 480;
+      if (p.posy < 0) p.posy = 0;
+      if (p.posy > 480) p.posy = 480;
+
+      // broadcast del mover
+      broadcast({ tipo: "mover", datos: p });
+
+    } else if (msg.tipo === "comer") {
+      if (!msg.datos || msg.datos.id === undefined) return;
+      const idMsg = String(msg.datos.id);
+      if (idMsg !== remitenteId) return;
+
+      const p = jugadores.get(idMsg);
+      if (!p) return;
+
+      if (p.posx === fruta.posx && p.posy === fruta.posy) {
+        p.puntos++;
+        broadcast({ tipo: "puntuacion", datos: { id: p.id, puntos: p.puntos } });
+        fruta = generarFruta();
+        broadcast({ tipo: "estadoFruta", datos: fruta });
+        console.log(`Jugador ${p.id} comió la fruta. Puntos=${p.puntos}`);
+      }
     }
+  });
 
-    // 🔹 Avisar a todos (incluido él mismo) de que hay un nuevo jugador
-    broadcast({ tipo: "new", datos: nuevoJugador });
+  ws.on("close", () => {
+    const idcerrado = socketToId.get(ws);
+    console.log("Conexión cerrada:", idcerrado);
+    if (idcerrado) {
+      jugadores.delete(idcerrado);
+      socketToId.delete(ws);
+      broadcast({ tipo: "delete", datos: idcerrado });
+    }
+  });
 
-    // --- Manejo de mensajes ---
-    ws.on("message", (data) => {
-        let mensaje;
-        try { mensaje = JSON.parse(data.toString()); } catch { return; }
-
-        if (mensaje.tipo === "mover") {
-            const j = jugadores[mensaje.datos.id];
-            if (!j) return;
-            j.dir = mensaje.datos.dir;
-            j.posx = parseInt(mensaje.datos.posx);
-            j.posy = parseInt(mensaje.datos.posy);
-            broadcast({ tipo: "mover", datos: j });
-
-        } else if (mensaje.tipo === "comer") {
-            const j = jugadores[mensaje.datos.id];
-            if (!j) return;
-            if (j.posx === fruta.posx && j.posy === fruta.posy) {
-                j.puntos++;
-                console.log(`Jugador ${j.id} ha comido fruta (${j.puntos} puntos)`);
-                broadcast({ tipo: "puntuacion", datos: { id: j.id, puntos: j.puntos } });
-                fruta = generarFruta();
-                broadcast({ tipo: "estadoFruta", datos: fruta });
-            }
-        }
-    });
-
-    ws.on("close", () => {
-        console.log("Jugador desconectado:", id);
-        delete jugadores[id];
-        conexiones = conexiones.filter(c => c !== ws);
-        broadcast({ tipo: "delete", datos: id });
-    });
+  ws.on("error", (e) => {
+    console.log("WS error:", e && e.message ? e.message : e);
+  });
 });
+
+console.log("Servidor listo.");

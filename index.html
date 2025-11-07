@@ -16,7 +16,6 @@
     .jugador{
         width:20px;
         height:20px;
-        background-color:red;
         position:absolute;
         left:0px;
         top:0px;
@@ -31,9 +30,9 @@
     .fruta {
         width:20px;
         height:20px;
-        background-color:orange;
         position:absolute;
         border-radius:50%;
+        background:orange;
     }
     #bloqueConectar { margin-top:8px; }
 </style>
@@ -49,141 +48,123 @@
 <div id="bloqueConectar">
     <input id="server" value="realtimeent.onrender.com">
     <button id="conectar">Conectar</button>
+    <button id="desconectar">Desconectar</button>
     <span id="estado"></span>
 </div>
 
 <script>
+/* Nombres como en tu código original */
 var jugadorBluePrint = document.getElementById("plantilla");
 jugadorBluePrint.remove();
 
-var miConexion;
+var miConexion = null;
 var miID = -1;
-var fruta;
+var fruta = null;
 
-/* función util: crea conexión websocket de forma segura (ws/wss) */
+// limpiar prefijos y elegir ws/wss automáticamente
 function crearWebSocketDesdeDireccion(direccionInput) {
     direccionInput = direccionInput.trim();
     if (!direccionInput) throw new Error("Dirección vacía");
-
-    // 🧹 limpia si el usuario pone http:// o https://
+    // si el usuario puso http(s):// eliminarlo
     direccionInput = direccionInput.replace(/^https?:\/\//, "");
-
+    // si usuario puso ws:// o wss://, usar tal cual
     if (direccionInput.startsWith("ws://") || direccionInput.startsWith("wss://")) {
         return new WebSocket(direccionInput);
     }
-
-    if (direccionInput.includes("render") || direccionInput.includes("onrender.com")) {
+    // si es onrender/servicio similar -> wss
+    if (direccionInput.includes("render") || direccionInput.includes("onrender.com") || direccionInput.includes("herokuapp.com")) {
         return new WebSocket("wss://" + direccionInput);
     }
-
+    // si incluye puerto: host:port
     if (direccionInput.includes(":")) {
         return new WebSocket("ws://" + direccionInput);
     }
-
+    // por defecto ws://host:8080
     return new WebSocket("ws://" + direccionInput + ":8080");
 }
 
-/* Evento conectar */
-document.getElementById("conectar").addEventListener("click", ()=>{
+/* --- Conectar / Desconectar --- */
+document.getElementById("conectar").addEventListener("click", () => {
     const estadoEl = document.getElementById("estado");
 
-    // 🧩 Evita conectar más de una vez
+    // si ya hay conexión en curso u abierta, no crear otra
     if (miConexion && (miConexion.readyState === WebSocket.OPEN || miConexion.readyState === WebSocket.CONNECTING)) {
-        console.warn("Ya estás conectado o conectando, no se creará otra conexión.");
         estadoEl.innerText = "ya conectado";
         return;
     }
 
-    estadoEl.innerText = "intentando conectar...";
-
-    let direccion;
-    try {
-        direccion = document.getElementById("server").value.trim();
-        if (!direccion) { 
-            alert("Introduce la dirección del servidor"); 
-            estadoEl.innerText = "dirección vacía"; 
-            return; 
-        }
-    } catch (e) {
-        console.error("Fallo obteniendo direccion:", e);
-        estadoEl.innerText = "error dirección";
-        return;
-    }
+    const direccionInput = document.getElementById("server").value.trim();
+    if (!direccionInput) { alert("Introduce la dirección del servidor"); return; }
 
     try {
-        miConexion = crearWebSocketDesdeDireccion(direccion);
+        miConexion = crearWebSocketDesdeDireccion(direccionInput);
     } catch (e) {
         console.error("No se pudo crear WebSocket:", e);
         estadoEl.innerText = "error crear ws";
+        miConexion = null;
         return;
     }
 
-    miConexion.addEventListener("open", ()=> {
+    estadoEl.innerText = "conectando...";
+
+    miConexion.addEventListener("open", () => {
         console.log("WS abierto");
         estadoEl.innerText = "conectado";
     });
 
-    miConexion.addEventListener("error", (err)=> {
-        console.error("WS error:", err);
+    miConexion.addEventListener("error", (ev) => {
+        console.error("WS error:", ev);
         estadoEl.innerText = "error conexión";
     });
 
-    miConexion.addEventListener("close", ()=> {
+    miConexion.addEventListener("close", () => {
         console.log("WS cerrado");
         estadoEl.innerText = "desconectado";
-        // 🔹 Limpia para permitir reconectar
+        // limpieza completa al cerrar para permitir reconectar limpísimo
         miConexion = null;
         miID = -1;
     });
 
-    miConexion.addEventListener("message", (m)=> {
-        try {
-            mensaje = JSON.parse(m.data.toString());
-        } catch (e) {
-            console.warn("Mensaje no JSON:", m.data);
-            return;
-        }
+    miConexion.addEventListener("message", (m) => {
+        let mensaje;
+        try { mensaje = JSON.parse(m.data.toString()); }
+        catch (e) { console.warn("Mensaje no JSON:", m.data); return; }
 
-        if (mensaje.tipo == "new") {
-            // igual que tu versión original: el primer "new" que recibe un cliente es su propio jugador
-            if (miID == -1) miID = mensaje.datos.id;
+        // ---- manejar tipos ----
+        if (mensaje.tipo === "new") {
+            // tu comportamiento original: el primer "new" que reciba un cliente es su propio jugador
+            if (miID === -1) miID = mensaje.datos.id;
 
-            // evitar crear duplicados
+            // evitar duplicados
             if (document.getElementById(mensaje.datos.id)) return;
 
             const nuevoJugador = jugadorBluePrint.cloneNode();
             nuevoJugador.id = mensaje.datos.id;
             nuevoJugador.dataset.dir = mensaje.datos.dir ?? "0";
-            nuevoJugador.dataset.posy = mensaje.datos.posy ?? 0;
             nuevoJugador.dataset.posx = mensaje.datos.posx ?? 0;
+            nuevoJugador.dataset.posy = mensaje.datos.posy ?? 0;
             nuevoJugador.dataset.puntos = mensaje.datos.puntos ?? 0;
-            nuevoJugador.style.top = nuevoJugador.dataset.posy + "px";
             nuevoJugador.style.left = nuevoJugador.dataset.posx + "px";
+            nuevoJugador.style.top = nuevoJugador.dataset.posy + "px";
             nuevoJugador.style.backgroundColor = mensaje.datos.color || "#c00";
             nuevoJugador.innerHTML = nuevoJugador.dataset.puntos;
             document.getElementById("juego").appendChild(nuevoJugador);
             return;
         }
 
-        if (mensaje.tipo == "delete") {
-            const el = document.getElementById(mensaje.datos);
-            if (el) el.remove();
+        if (mensaje.tipo === "mover") {
+            const d = mensaje.datos;
+            const el = document.getElementById(d.id);
+            if (!el) return;
+            el.dataset.dir = d.dir ?? "0";
+            el.dataset.posx = d.posx ?? el.dataset.posx;
+            el.dataset.posy = d.posy ?? el.dataset.posy;
+            el.style.left = el.dataset.posx + "px";
+            el.style.top = el.dataset.posy + "px";
             return;
         }
 
-        if (mensaje.tipo == "mover") {
-            const j = document.getElementById(mensaje.datos.id);
-            if (j) {
-                j.dataset.dir = mensaje.datos.dir ?? "0";
-                j.dataset.posy = mensaje.datos.posy ?? j.dataset.posy;
-                j.dataset.posx = mensaje.datos.posx ?? j.dataset.posx;
-                j.style.left = j.dataset.posx + "px";
-                j.style.top = j.dataset.posy + "px";
-            }
-            return;
-        }
-
-        if (mensaje.tipo == "estadoFruta") {
+        if (mensaje.tipo === "estadoFruta") {
             const posx = mensaje.datos.posx;
             const posy = mensaje.datos.posy;
             if (!fruta) {
@@ -196,21 +177,35 @@ document.getElementById("conectar").addEventListener("click", ()=>{
             return;
         }
 
-        if (mensaje.tipo == "puntuacion") {
+        if (mensaje.tipo === "puntuacion") {
             const id = mensaje.datos.id;
             const puntos = mensaje.datos.puntos;
-            const jugador = document.getElementById(id);
-            if (jugador) {
-                jugador.dataset.puntos = puntos;
-                jugador.innerHTML = puntos;
-            }
+            const el = document.getElementById(id);
+            if (el) { el.dataset.puntos = puntos; el.innerHTML = puntos; }
             return;
         }
+
+        if (mensaje.tipo === "delete") {
+            const el = document.getElementById(mensaje.datos);
+            if (el) el.remove();
+            return;
+        }
+
+        console.log("Mensaje no manejado:", mensaje);
     });
 });
 
-/* Eventos de teclado */
-document.addEventListener("keydown", (ev)=>{
+// botón desconectar (opcional)
+document.getElementById("desconectar").addEventListener("click", () => {
+    if (miConexion) {
+        miConexion.close();
+        miConexion = null;
+    }
+    miID = -1;
+});
+
+/* --- Eventos de teclado (solo envían si la conexión es tuya y abierta) --- */
+document.addEventListener("keydown", (ev) => {
     if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
     if (miID === -1) return;
     const key = ev.key.toLowerCase();
@@ -219,19 +214,11 @@ document.addEventListener("keydown", (ev)=>{
     const yo = document.getElementById(miID);
     if (!yo) return;
 
-    const msg = {
-        tipo: "mover",
-        datos: {
-            id: miID,
-            posx: yo.dataset.posx,
-            posy: yo.dataset.posy,
-            dir: key
-        }
-    };
-    try { miConexion.send(JSON.stringify(msg)); } catch(e) { console.error("Error al enviar mover:", e); }
+    const msg = { tipo: "mover", datos: { id: miID, posx: yo.dataset.posx, posy: yo.dataset.posy, dir: key } };
+    try { miConexion.send(JSON.stringify(msg)); } catch (e) { console.error("Send mover error:", e); }
 });
 
-document.addEventListener("keyup", (ev)=>{
+document.addEventListener("keyup", (ev) => {
     if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
     if (miID === -1) return;
     const key = ev.key.toLowerCase();
@@ -240,58 +227,48 @@ document.addEventListener("keyup", (ev)=>{
     const yo = document.getElementById(miID);
     if (!yo) return;
 
-    const msg = {
-        tipo: "mover",
-        datos: {
-            id: miID,
-            posx: yo.dataset.posx,
-            posy: yo.dataset.posy,
-            dir: "0"
-        }
-    };
-    try { miConexion.send(JSON.stringify(msg)); } catch(e) { console.error("Error al enviar stop:", e); }
+    const msg = { tipo: "mover", datos: { id: miID, posx: yo.dataset.posx, posy: yo.dataset.posy, dir: "0" } };
+    try { miConexion.send(JSON.stringify(msg)); } catch (e) { console.error("Send stop error:", e); }
 });
 
-/* Intervalo de animación local */
-setInterval(()=>{
-    var listaJugadores=document.getElementsByClassName("jugador");
-    if (listaJugadores.length<1) return;
-    for (var i=0;i<listaJugadores.length;i++){
-        var j = listaJugadores[i];
-        var dir = j.dataset.dir || "0";
-        var px = Number(j.dataset.posx) || 0;
-        var py = Number(j.dataset.posy) || 0;
+/* --- Animación local (mueve los DIVs según dataset.dir) --- */
+setInterval(() => {
+    const lista = document.getElementsByClassName("jugador");
+    if (lista.length < 1) return;
+    for (let i = 0; i < lista.length; i++) {
+        const j = lista[i];
+        const dir = j.dataset.dir || "0";
+        let px = Number(j.dataset.posx) || 0;
+        let py = Number(j.dataset.posy) || 0;
+        if (dir === "a") px -= 20;
+        else if (dir === "d") px += 20;
+        else if (dir === "w") py -= 20;
+        else if (dir === "s") py += 20;
 
-        if(dir=="a") px-=20;
-        else if(dir=="d") px+=20;
-        else if(dir=="w") py-=20;
-        else if(dir=="s") py+=20;
+        if (px < 0) px = 0;
+        if (px > 480) px = 480;
+        if (py < 0) py = 0;
+        if (py > 480) py = 480;
 
-        if(px<0) px=0;
-        if(px>480) px=480;
-        if(py<0) py=0;
-        if(py>480) py=480;
+        j.dataset.posx = px;
+        j.dataset.posy = py;
+        j.style.left = px + "px";
+        j.style.top = py + "px";
 
-        j.dataset.posx=px;
-        j.dataset.posy=py;
-        j.style.left=px+"px";
-        j.style.top=py+"px";
-
+        // detectar si toca la fruta
         if (fruta) {
-            var fx = parseInt(fruta.style.left);
-            var fy = parseInt(fruta.style.top);
-            if (px == fx && py == fy) {
+            const fx = parseInt(fruta.style.left);
+            const fy = parseInt(fruta.style.top);
+            if (px === fx && py === fy) {
                 if (miConexion && miConexion.readyState === WebSocket.OPEN) {
                     try {
-                        miConexion.send(JSON.stringify({ tipo:"comer", datos:{ id:j.id } }));
-                    } catch(e){
-                        console.error("Error al enviar comer:", e);
-                    }
+                        miConexion.send(JSON.stringify({ tipo: "comer", datos: { id: j.id } }));
+                    } catch (e) { console.error("Send comer error:", e); }
                 }
             }
         }
     }
-},200);
+}, 200);
 </script>
 </body>
 </html>
