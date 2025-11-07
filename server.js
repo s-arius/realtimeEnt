@@ -1,4 +1,3 @@
-// server.js
 const WebSocket = require("ws");
 const PORT = process.env.PORT || 8080;
 const servidor = new WebSocket.Server({ port: PORT });
@@ -19,7 +18,7 @@ function generarFruta() {
 function broadcast(msg) {
   const data = JSON.stringify(msg);
   conexiones.forEach(c => {
-    if (c.readyState === WebSocket.OPEN) c.send(data);
+    if (c.readyState == WebSocket.OPEN) c.send(data);
   });
 }
 
@@ -27,7 +26,6 @@ servidor.on("connection", (ws) => {
   const id = siguienteID++;
   conexiones.push(ws);
 
-  // crear jugador nuevo
   const jugador = {
     id,
     posx: Math.floor(Math.random() * 25) * 20,
@@ -40,31 +38,28 @@ servidor.on("connection", (ws) => {
 
   console.log("Jugador conectado:", id);
 
-  // enviar su propio jugador y el resto del estado
   ws.send(JSON.stringify({ tipo: "new", datos: jugador }));
   for (const j in jugadores) {
     if (j != id) ws.send(JSON.stringify({ tipo: "new", datos: jugadores[j] }));
   }
   ws.send(JSON.stringify({ tipo: "estadoFruta", datos: fruta }));
 
-  // avisar a los demás
   broadcast({ tipo: "new", datos: jugador });
 
-  // recibir mensajes
   ws.on("message", (m) => {
     const msg = JSON.parse(m.toString());
     const j = jugadores[msg.datos.id];
     if (!j) return;
 
-    if (msg.tipo === "mover") {
+    if (msg.tipo == "mover") {
       j.dir = msg.datos.dir;
       j.posx = parseInt(msg.datos.posx);
       j.posy = parseInt(msg.datos.posy);
       broadcast({ tipo: "mover", datos: j });
     }
 
-    if (msg.tipo === "comer") {
-      if (j.posx === fruta.posx && j.posy === fruta.posy) {
+    if (msg.tipo == "comer") {
+      if (j.posx == fruta.posx && j.posy == fruta.posy) {
         j.puntos++;
         broadcast({ tipo: "puntuacion", datos: { id: j.id, puntos: j.puntos } });
         fruta = generarFruta();

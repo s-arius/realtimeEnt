@@ -25,7 +25,6 @@
   </div>
 
 <script>
-/* Nombres y estilo coherentes con tu código original */
 var jugadorBluePrint = document.getElementById("plantilla");
 jugadorBluePrint.remove();
 
@@ -33,7 +32,6 @@ var miConexion = null;
 var miID = -1;
 var fruta = null;
 
-/* Crea WebSocket limpiando prefijos comunes */
 function crearWebSocketDesdeDireccion(direccionInput) {
   direccionInput = direccionInput.trim();
   if (!direccionInput) throw new Error("Dirección vacía");
@@ -46,12 +44,10 @@ function crearWebSocketDesdeDireccion(direccionInput) {
   return new WebSocket("ws://" + direccionInput + ":8080");
 }
 
-/* Conectar */
 document.getElementById("conectar").addEventListener("click", ()=>{
   const estadoEl = document.getElementById("estado");
 
-  // evita múltiples conexiones
-  if (miConexion && (miConexion.readyState === WebSocket.OPEN || miConexion.readyState === WebSocket.CONNECTING)) {
+  if (miConexion && (miConexion.readyState == WebSocket.OPEN || miConexion.readyState == WebSocket.CONNECTING)) {
     estadoEl.innerText = "ya conectado";
     return;
   }
@@ -79,9 +75,9 @@ document.getElementById("conectar").addEventListener("click", ()=>{
     try { mensaje = JSON.parse(m.data.toString()); } catch(e){ console.warn("no json", m.data); return; }
 
     // --- nuevo jugador ---
-    if (mensaje.tipo === "new") {
+    if (mensaje.tipo == "new") {
       // el primer "new" recibido será tu propio jugador (como en tu código original)
-      if (miID === -1) miID = mensaje.datos.id;
+      if (miID == -1) miID = mensaje.datos.id;
 
       // evitar duplicados
       if (document.getElementById(mensaje.datos.id)) return;
@@ -100,29 +96,25 @@ document.getElementById("conectar").addEventListener("click", ()=>{
       return;
     }
 
-    // --- eliminar jugador ---
-    if (mensaje.tipo === "delete") {
+    if (mensaje.tipo == "delete") {
       const el = document.getElementById(mensaje.datos);
       if (el) el.remove();
       return;
     }
 
-    // --- mover recibid desde server (sincronización) ---
-    if (mensaje.tipo === "mover") {
+    if (mensaje.tipo == "mover") {
       const d = mensaje.datos;
       const el = document.getElementById(d.id);
       if (!el) return;
       el.dataset.posx = (d.posx != null) ? d.posx : el.dataset.posx;
       el.dataset.posy = (d.posy != null) ? d.posy : el.dataset.posy;
-      // actualizar también la dirección para mantener sincronía
       el.dataset.dir  = (d.dir  != null) ? d.dir  : el.dataset.dir;
       el.style.left = el.dataset.posx + "px";
       el.style.top  = el.dataset.posy + "px";
       return;
     }
 
-    // --- fruta ---
-    if (mensaje.tipo === "estadoFruta") {
+    if (mensaje.tipo == "estadoFruta") {
       const posx = mensaje.datos.posx;
       const posy = mensaje.datos.posy;
       if (!fruta) {
@@ -135,8 +127,7 @@ document.getElementById("conectar").addEventListener("click", ()=>{
       return;
     }
 
-    // --- puntuacion ---
-    if (mensaje.tipo === "puntuacion") {
+    if (mensaje.tipo == "puntuacion") {
       const el = document.getElementById(mensaje.datos.id);
       if (el) { el.dataset.puntos = mensaje.datos.puntos; el.innerHTML = mensaje.datos.puntos; }
       return;
@@ -144,23 +135,19 @@ document.getElementById("conectar").addEventListener("click", ()=>{
   });
 });
 
-/* TECLAS: wasd (ahora sí) 
-   Importante: al pulsar actualizo inmediatamente mi DIV y envio al servidor.
-*/
+
 document.addEventListener("keydown", (ev)=>{
   const key = ev.key.toLowerCase();
   if (!["w","a","s","d"].includes(key)) return;
 
   if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
-  if (miID === -1) return;
+  if (miID == -1) return;
 
   const yo = document.getElementById(miID);
   if (!yo) return;
 
-  // Actualizo la dirección localmente para ver movimiento inmediato
   yo.dataset.dir = key;
 
-  // Envío al servidor la intención de mover (posiciones actuales + dirección)
   const msg = { tipo: "mover", datos: { id: miID, posx: yo.dataset.posx, posy: yo.dataset.posy, dir: key } };
   try { miConexion.send(JSON.stringify(msg)); } catch(e){ console.error("send mover", e); }
 });
@@ -170,22 +157,17 @@ document.addEventListener("keyup", (ev)=>{
   if (!["w","a","s","d"].includes(key)) return;
 
   if (!miConexion || miConexion.readyState !== WebSocket.OPEN) return;
-  if (miID === -1) return;
+  if (miID == -1) return;
 
   const yo = document.getElementById(miID);
   if (!yo) return;
 
-  // parar localmente
   yo.dataset.dir = "0";
 
-  // avisar al servidor
   const msg = { tipo: "mover", datos: { id: miID, posx: yo.dataset.posx, posy: yo.dataset.posy, dir: "0" } };
   try { miConexion.send(JSON.stringify(msg)); } catch(e){ console.error("send stop", e); }
 });
 
-/* ANIMACIÓN LOCAL: mueve todos los DIVs según su dataset.dir (incluido el tuyo)
-   La actualización local responde instantáneamente al pulsar por el cambio de dataset.dir.
-*/
 setInterval(()=>{
   const lista = document.getElementsByClassName("jugador");
   if (lista.length < 1) return;
@@ -195,10 +177,10 @@ setInterval(()=>{
     let px = Number(j.dataset.posx) || 0;
     let py = Number(j.dataset.posy) || 0;
 
-    if (dir === "a") px -= 20;
-    else if (dir === "d") px += 20;
-    else if (dir === "w") py -= 20;
-    else if (dir === "s") py += 20;
+    if (dir == "a") px -= 20;
+    else if (dir == "d") px += 20;
+    else if (dir == "w") py -= 20;
+    else if (dir == "s") py += 20;
 
     if (px < 0) px = 0;
     if (px > 480) px = 480;
@@ -210,12 +192,11 @@ setInterval(()=>{
     j.style.left = px + "px";
     j.style.top  = py + "px";
 
-    // comprobar fruta y avisar al servidor
     if (fruta) {
       const fx = parseInt(fruta.style.left);
       const fy = parseInt(fruta.style.top);
-      if (px === fx && py === fy) {
-        if (miConexion && miConexion.readyState === WebSocket.OPEN) {
+      if (px == fx && py == fy) {
+        if (miConexion && miConexion.readyState == WebSocket.OPEN) {
           try { miConexion.send(JSON.stringify({ tipo:"comer", datos:{ id: j.id } })); }
           catch(e){ console.error("send comer", e); }
         }
