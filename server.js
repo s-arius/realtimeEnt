@@ -1,5 +1,7 @@
 const WebSocket = require("ws");
-const servidor = new WebSocket.Server({ port: 8080 });
+const PORT = process.env.PORT || 8080;
+const servidor = new WebSocket.Server({ port: PORT });
+console.log("servidor en puerto: ", PORT)
 
 console.log("Servidor Snake Online iniciado en el puerto 8080");
 

@@ -47,7 +47,7 @@
 </div>
 
 <div id="bloqueConectar">
-    <input id="server" value="srv-d4703a3e5dus73dlgo9g">
+    <input id="server" value="https://realtimeent.onrender.com">
     <button id="conectar">Conectar</button>
 </div>
 
@@ -61,7 +61,7 @@ var fruta;
 
 document.getElementById("conectar").addEventListener("click", ()=>{
     var direccion = document.getElementById("server").value;
-    miConexion = new WebSocket("ws://"+direccion+":8080");
+    miConexion = new WebSocket("ws://"+direccion);
 
     miConexion.addEventListener("message", (m)=>{
         mensaje = JSON.parse(m.data.toString());
