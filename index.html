@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>snake Online</title>
+<style>
+#juego {
+    border:2px solid black;
+    width:500px;
+    height:500px;
+    position:relative;
+    background-color:#f9f9f9;
+    border-radius:7px;
+
+}
+.jugador{
+    width:20px;
+    height:20px;
+    background-color:red;
+    position:absolute;
+    left:0px;
+    top:0px;
+    border-radius:3px;
+    color:white;
+    font-size:10px;
+    text-align:center;
+    line-height:20px;
+    font-weight:bold;
+    text-shadow:0 0 2px black;
+}
+.fruta {
+    width:20px;
+    height:20px;
+    background-color:orange;
+    position:absolute;
+    border-radius:50%;
+}
+</style>
+</head>
+<body>
+
+<h1>snake Online</h1>
+
+<div id="juego">
+    <div class="jugador" id="plantilla"></div>
+</div>
+
+<div id="bloqueConectar">
+    <input id="server" value="127.0.0.1">
+    <button id="conectar">Conectar</button>
+</div>
+
+<script>
+var jugadorBluePrint = document.getElementById("plantilla");
+jugadorBluePrint.remove();
+
+var miConexion;
+var miID = -1;
+var fruta;
+
+document.getElementById("conectar").addEventListener("click", ()=>{
+    var direccion = document.getElementById("server").value;
+    miConexion = new WebSocket("ws://"+direccion+":8080");
+
+    miConexion.addEventListener("message", (m)=>{
+        mensaje = JSON.parse(m.data.toString());
+
+        if (mensaje.tipo == "new") {
+            if (miID == -1) miID = mensaje.datos.id;
+
+            if (document.getElementById(mensaje.datos.id)) return;
+
+            nuevoJugador = jugadorBluePrint.cloneNode();
+            nuevoJugador.id = mensaje.datos.id;
+            nuevoJugador.dataset.dir = mensaje.datos.dir;
+            nuevoJugador.dataset.posy = mensaje.datos.posy;
+            nuevoJugador.dataset.posx = mensaje.datos.posx;
+            nuevoJugador.dataset.puntos = mensaje.datos.puntos;
+            nuevoJugador.style.top = mensaje.datos.posy+"px";
+            nuevoJugador.style.left = mensaje.datos.posx+"px";
+            nuevoJugador.style.backgroundColor = mensaje.datos.color;
+            nuevoJugador.innerHTML = mensaje.datos.puntos;
+            document.getElementById("juego").appendChild(nuevoJugador);
+
+        } else if (mensaje.tipo == "delete") {
+            document.getElementById(mensaje.datos)?.remove();
+
+        } else if (mensaje.tipo == "mover") {
+            var j = document.getElementById(mensaje.datos.id);
+            if (j) {
+                j.dataset.dir = mensaje.datos.dir;
+                j.dataset.posy = mensaje.datos.posy;
+                j.dataset.posx = mensaje.datos.posx;
+                j.style.left = mensaje.datos.posx + "px";
+                j.style.top = mensaje.datos.posy + "px";
+            }
+
+        } else if (mensaje.tipo == "estadoFruta") {
+            if (!fruta) {
+                fruta = document.createElement("div");
+                fruta.className = "fruta";
+                document.getElementById("juego").appendChild(fruta);
+            }
+            fruta.style.left = mensaje.datos.posx + "px";
+            fruta.style.top = mensaje.datos.posy + "px";
+
+        } else if (mensaje.tipo == "puntuacion") {
+            var j = document.getElementById(mensaje.datos.id);
+            if (j) {
+                j.dataset.puntos = mensaje.datos.puntos;
+                j.innerHTML = mensaje.datos.puntos;
+            }
+        }
+    });
+});
+
+document.addEventListener("keydown", (ev)=>{
+    var yo=document.getElementById(miID);
+    if (!yo) return;
+    mensaje={
+        tipo:"mover",
+        datos:{
+            id:miID,
+            posx: yo.dataset.posx,
+            posy: yo.dataset.posy,
+            dir:ev.key
+        }
+    };
+    miConexion.send(JSON.stringify(mensaje));
+});
+
+document.addEventListener("keyup", (ev)=>{
+    var yo=document.getElementById(miID);
+    if (!yo) return;
+    mensaje={
+        tipo:"mover",
+        datos:{
+            id:miID,
+            posx: yo.dataset.posx,
+            posy: yo.dataset.posy,
+            dir:"0"
+        }
+    };
+    miConexion.send(JSON.stringify(mensaje));
+});
+
+setInterval(()=>{
+    var listaJugadores=document.getElementsByClassName("jugador");
+    if (listaJugadores.length<1) return;
+    for (var i=0;i<listaJugadores.length;i++){
+        j=listaJugadores[i];
+        var dir=j.dataset.dir;
+        var px=Number(j.dataset.posx);
+        var py=Number(j.dataset.posy);
+
+        if(dir=="a") px-=20;
+        else if(dir=="d") px+=20;
+        else if(dir=="w") py-=20;
+        else if(dir=="s") py+=20;
+
+        if(px<0) px=0;
+        if(px>480) px=480;
+        if(py<0) py=0;
+        if(py>480) py=480;
+
+        j.dataset.posx=px;
+        j.dataset.posy=py;
+        j.style.left=px+"px";
+        j.style.top=py+"px";
+
+        if (fruta) {
+            var fx = parseInt(fruta.style.left);
+            var fy = parseInt(fruta.style.top);
+            if (px == fx && py == fy) {
+                miConexion.send(JSON.stringify({
+                    tipo:"comer",
+                    datos:{ id:j.id }
+                }));
+            }
+        }
+    }
+},200);
+</script>
+</body>
+</html>
