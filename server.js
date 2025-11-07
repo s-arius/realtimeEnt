@@ -1,7 +1,7 @@
-const WebSocket = require("ws");
 const PORT = process.env.PORT || 8080;
 const servidor = new WebSocket.Server({ port: PORT });
-console.log("servidor en puerto: ", PORT)
+console.log("Servidor Snake Online en puerto:", PORT);
+
 
 console.log("Servidor Snake Online iniciado en el puerto 8080");
 
@@ -39,18 +39,23 @@ servidor.on("connection", (ws) => {
 
     console.log("Jugador conectado:", id);
 
+    // 🔹 Enviar primero al jugador recién conectado su propio "new"
     ws.send(JSON.stringify({ tipo: "new", datos: nuevoJugador }));
 
+    // 🔹 Enviar el estado de la fruta
     ws.send(JSON.stringify({ tipo: "estadoFruta", datos: fruta }));
 
+    // 🔹 Enviar al nuevo jugador la lista de los demás jugadores existentes
     for (const otroID in jugadores) {
         if (parseInt(otroID) !== id) {
             ws.send(JSON.stringify({ tipo: "new", datos: jugadores[otroID] }));
         }
     }
 
+    // 🔹 Avisar a todos (incluido él mismo) de que hay un nuevo jugador
     broadcast({ tipo: "new", datos: nuevoJugador });
 
+    // --- Manejo de mensajes ---
     ws.on("message", (data) => {
         let mensaje;
         try { mensaje = JSON.parse(data.toString()); } catch { return; }

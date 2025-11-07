@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>snake Online</title>
+<title>Snake Online</title>
 <style>
 #juego {
     border:2px solid black;
@@ -11,8 +11,6 @@
     height:500px;
     position:relative;
     background-color:#f9f9f9;
-    border-radius:7px;
-
 }
 .jugador{
     width:20px;
@@ -40,7 +38,7 @@
 </head>
 <body>
 
-<h1>snake Online</h1>
+<h1>Snake Online</h1>
 
 <div id="juego">
     <div class="jugador" id="plantilla"></div>
@@ -60,15 +58,17 @@ var miID = -1;
 var fruta;
 
 document.getElementById("conectar").addEventListener("click", ()=>{
-    var direccion = document.getElementById("server").value;
-    miConexion = new WebSocket("ws://"+direccion);
+    miConexion = new WebSocket("wss://" + direccion);
+
 
     miConexion.addEventListener("message", (m)=>{
         mensaje = JSON.parse(m.data.toString());
 
         if (mensaje.tipo == "new") {
+            // si todavía no tengo mi ID, este primer jugador soy yo
             if (miID == -1) miID = mensaje.datos.id;
 
+            // evitar duplicados
             if (document.getElementById(mensaje.datos.id)) return;
 
             nuevoJugador = jugadorBluePrint.cloneNode();
@@ -169,6 +169,7 @@ setInterval(()=>{
         j.style.left=px+"px";
         j.style.top=py+"px";
 
+        // comprobar colisión con fruta
         if (fruta) {
             var fx = parseInt(fruta.style.left);
             var fy = parseInt(fruta.style.top);
